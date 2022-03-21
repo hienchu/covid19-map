@@ -1,48 +1,171 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="initial-scale=1.0, user-scalable=no, width=device-width">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="initial-scale=1.0, user-scalable=no, width=device-width"
+    />
     <title>热力图</title>
-    <link rel="stylesheet" href="https://a.amap.com/jsapi_demos/static/demo-center/css/demo-center.css"/>
+    <link
+      rel="stylesheet"
+      href="https://a.amap.com/jsapi_demos/static/demo-center/css/demo-center.css"
+    />
     <style>
-        html,
-        body,
-        #container {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-        }
+      html,
+      body,
+      #container {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      #pickerBox {
+        position: absolute;
+        z-index: 9999;
+        top: 50px;
+        right: 30px;
+        width: 300px;
+      }
+
+      #pickerInput {
+        width: 200px;
+        padding: 5px 5px;
+      }
+
+      #poiInfo {
+        background: #fff;
+      }
     </style>
-</head>
-<body>
-<div id="container"></div>
-<div class="input-card" style="width: auto;">
-    <div class="input-item">
+  </head>
+  <body>
+    <div id="container"></div>
+    <div id="pickerBox">
+      <input id="pickerInput" placeholder="输入关键字选取地点" />
+      <div id="poiInfo"></div>
+    </div>
+    <div class="input-card" style="width: auto; display: none">
+      <div class="input-item">
         <button class="btn" onclick="heatmap.show()">显示热力图</button>
-    </div>
-    <div class="input-item">
+      </div>
+      <div class="input-item">
         <button class="btn" onclick="heatmap.hide()">关闭热力图</button>
+      </div>
     </div>
-</div>
-<script src="https://webapi.amap.com/maps?v=2.0&key=3d23c4b87e93c51f81d4f727b35b79c4"></script>
-<script src="https://a.amap.com/jsapi_demos/static/resource/heatmapData.js"></script>
-<script>
-    var map = new AMap.Map("container", {
+    <script src="//webapi.amap.com/maps?v=2.0&key=3d23c4b87e93c51f81d4f727b35b79c4"></script>
+    <!-- UI组件库 1.0 -->
+    <script src="//webapi.amap.com/ui/1.1/main.js?v=1.1.1"></script>
+    <script src="//a.amap.com/jsapi_demos/static/resource/heatmapData.js"></script>
+    <script>
+      var map = new AMap.Map("container", {
+        mapStyle: "amap://styles/grey",
         resizeEnable: true,
-        center: [116.418261, 39.921984],
-        zoom: 11
-    });
+        // center: [116.418261, 39.921984],
+        zoom: 11,
+      });
 
-    if (!isSupportCanvas()) {
-        alert('热力图仅对支持canvas的浏览器适用,您所使用的浏览器不能使用热力图功能,请换个浏览器试试~')
-    }
+      AMap.plugin("AMap.Geolocation", function () {
+        var geolocation = new AMap.Geolocation({
+          enableHighAccuracy: true, //是否使用高精度定位，默认:true
+          timeout: 10000, //超过10秒后停止定位，默认：5s
+          buttonPosition: "LT", //定位按钮的停靠位置
+          buttonOffset: new AMap.Pixel(10, 20), //定位按钮与设置的停靠位置的偏移量，默认：Pixel(10, 20)
+          zoomToAccuracy: true, //定位成功后是否自动调整地图视野到定位点
+        });
+        map.addControl(geolocation);
+        //AMap.event.addListener(geolocation, "complete", onComplete); //返回定位信息
+        //AMap.event.addListener(geolocation, "error", onError); //返回定位出错信息
+        /*
+        geolocation.getCurrentPosition(function (status, result) {
+          if (status == "complete") {
+            onComplete(result);
+          } else {
+            onError(result);
+          }
+        });
+        */
+        //解析定位结果
+        function onComplete(data) {
+          document.getElementById("status").innerHTML = "定位成功";
+          var str = [];
+          str.push("定位结果：" + data.position);
+          str.push("定位类别：" + data.location_type);
+          if (data.accuracy) {
+            str.push("精度：" + data.accuracy + " 米");
+          } //如为IP精确定位结果则没有精度信息
+          str.push("是否经过偏移：" + (data.isConverted ? "是" : "否"));
+          document.getElementById("result").innerHTML = str.join("<br>");
+        }
+        //解析定位错误信息
+        function onError(data) {
+          document.getElementById("status").innerHTML = "定位失败";
+          document.getElementById("result").innerHTML =
+            "失败原因排查信息:" + data.message;
+        }
+      });
 
-    //详细的参数,可以查看heatmap.js的文档 http://www.patrick-wied.at/static/heatmapjs/docs.html
-    //参数说明如下:
-    /* visible 热力图是否显示,默认为true
+      AMapUI.loadUI(["misc/PoiPicker"], function (PoiPicker) {
+        var poiPicker = new PoiPicker({
+          input: "pickerInput",
+        });
+
+        //初始化poiPicker
+        poiPickerReady(poiPicker);
+      });
+
+      function poiPickerReady(poiPicker) {
+        window.poiPicker = poiPicker;
+
+        var marker = new AMap.Marker();
+
+        var infoWindow = new AMap.InfoWindow({
+          offset: new AMap.Pixel(0, -20),
+        });
+
+        //选取了某个POI
+        poiPicker.on("poiPicked", function (poiResult) {
+          var source = poiResult.source,
+            poi = poiResult.item,
+            info = {
+              source: source,
+              id: poi.id,
+              name: poi.name,
+              location: poi.location.toString(),
+              address: poi.address,
+            };
+
+          marker.setMap(map);
+          infoWindow.setMap(map);
+
+          marker.setPosition(poi.location);
+          infoWindow.setPosition(poi.location);
+
+          infoWindow.setContent(
+            "POI信息: <pre>" + JSON.stringify(info, null, 2) + "</pre>"
+          );
+          infoWindow.open(map, marker.getPosition());
+
+          map.setCenter(marker.getPosition());
+        });
+
+        /* 
+        poiPicker.onCityReady(function () {
+          poiPicker.suggest("美食");
+        });
+        */
+      }
+
+      if (!isSupportCanvas()) {
+        alert(
+          "热力图仅对支持canvas的浏览器适用,您所使用的浏览器不能使用热力图功能,请换个浏览器试试~"
+        );
+      }
+
+      //详细的参数,可以查看heatmap.js的文档 http://www.patrick-wied.at/static/heatmapjs/docs.html
+      //参数说明如下:
+      /* visible 热力图是否显示,默认为true
      * opacity 热力图的透明度,分别对应heatmap.js的minOpacity和maxOpacity
      * radius 势力图的每个点的半径大小
      * gradient  {JSON} 热力图的渐变区间 . gradient如下所示
@@ -54,13 +177,13 @@
      其中 key 表示插值的位置, 0-1
      value 为颜色值
      */
-    var heatmap;
-    map.plugin(["AMap.HeatMap"], function () {
+      var heatmap;
+      map.plugin(["AMap.HeatMap"], function () {
         //初始化heatmap对象
         heatmap = new AMap.HeatMap(map, {
-            radius: 25, //给定半径
-            opacity: [0, 0.8]
-            /*,
+          radius: 25, //给定半径
+          opacity: [0, 0.8],
+          /*,
             gradient:{
                 0.5: 'blue',
                 0.65: 'rgb(117,211,248)',
@@ -71,17 +194,19 @@
              */
         });
         //设置数据集：该数据为北京部分“公园”数据
+        /*
         heatmap.setDataSet({
-            data: heatmapData,
-            max: 100
+          data: heatmapData,
+          max: 100,
         });
-    });
+        */
+      });
 
-    //判断浏览区是否支持canvas
-    function isSupportCanvas() {
-        var elem = document.createElement('canvas');
-        return !!(elem.getContext && elem.getContext('2d'));
-    }
-</script>
-</body>
+      //判断浏览区是否支持canvas
+      function isSupportCanvas() {
+        var elem = document.createElement("canvas");
+        return !!(elem.getContext && elem.getContext("2d"));
+      }
+    </script>
+  </body>
 </html>
